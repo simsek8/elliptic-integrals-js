@@ -1,24 +1,20 @@
 /* The arithmetic-geometric mean of two non-negative numbers */
 Math.agm = function(a0,g0)
 {
-  var maxIter = 50;
+    var maxIter = 50;
+    var an = (a0+g0)/2;
+    var gn = Math.sqrt(a0*g0);
 
-  var an = (a0+g0)/2;
-  var gn = Math.sqrt(a0*g0);
-
-  for (var iter = 0; (iter < maxIter) && (Math.abs(an-gn) > 1e-15); iter++)
-  {
-    a0 = 0.5 * (an + gn);
-    g0 = Math.sqrt(an*gn);
-
-    an = a0;
-    gn = g0;
-  };
-
-  if (iter == maxIter)
-    console.warn("Math.agm hit iteration limit of " + maxIter + ", probably didn't converge.");
-
-  return an;
+    for (var iter = 0; (iter < maxIter) && (Math.abs(an-gn) > 1e-15); iter++)
+    {
+        a0 = 0.5 * (an + gn);
+        g0 = Math.sqrt(an*gn);
+        an = a0;
+        gn = g0;
+    };
+    if (iter == maxIter)
+        console.warn("Math.agm hit iteration limit of " + maxIter + ", probably didn't converge.");
+    return an;
 };
 
 /* EllipticK(m) - The complete elliptic integral of the first type.
@@ -30,102 +26,105 @@ Math.agm = function(a0,g0)
  */
 Math.EllipticK = function( m )
 {
-  var kprime = Math.sqrt(1 - m);
-
-  return 0.5 * Math.PI / Math.agm(1, kprime);
+    var kprime = Math.sqrt(1 - m);
+    return 0.5 * Math.PI / Math.agm(1, kprime);
 };
 
-/* EllipticE(m) - The complete elliptic integral of the second type.
- * The argument is the *parameter* m = k^2, where k is the *modulus*.
- * The parameter must satisfy m < 1.
- * In terms of the integral definition, we have
- * E(m) = \int_0^{\pi/2} \sqrt{1 - m (\sin\theta)^2} d\theta
- * This algorithm comes from:
- * http://scitation.aip.org/content/aip/journal/jap/34/9/10.1063/1.1729771
- * Garrett, Milan Wayne. "Calculation of fields, forces, and mutual
- * inductances of current systems by elliptic integrals." Journal of
- * Applied Physics 34.9 (1963): 2567-2573.
- * See Eqs. (18)-(21)
- */
-Math.EllipticE = function( m )
-{
-  var iter = 0, maxIter = 50;
+Math.Ellipj = function(u, m) {
+    // Constants
+    const MACHEP = 1.1102230246251565e-16;
+    const PIO2 = Math.PI / 2.0;
 
-  var kprime = Math.sqrt(1. - m);
+    // Variables
+    let ai, b, phi, t, twon;
+    const a = [1.0];
+    const c = [Math.sqrt(m)];
+    let i = 0;
 
-  var a0 = 1., g0 = kprime;
+    // Check for special cases
+    if (m < 0.0 || m > 1.0) {
+        console.error("ellpj: DOMAIN error");
+        return { sn: 0.0, cn: 0.0, dn: 0.0, ph: 0.0 };
+    }
 
-  var an = a0, gn = g0;
+    if (m < 1.0e-9) {
+        t = Math.sin(u);
+        b = Math.cos(u);
+        ai = 0.25 * m * (u - t * b);
+        return {
+            sn: t - ai * b,
+            cn: b + ai * t,
+            ph: u - ai,
+            dn: 1.0 - 0.5 * m * t * t
+        };
+    }
 
-  var twoPow = 0.25;
+    if (m >= 0.9999999999) {
+        ai = 0.25 * (1.0 - m);
+        b = Math.cosh(u);
+        t = Math.tanh(u);
+        phi = 1.0 / b;
+        twon = b * Math.sinh(u);
+        ai *= t * phi;
+        return {
+            sn: t + ai * (twon - u) / (b * b),
+            ph: 2.0 * Math.atan(Math.exp(u)) - PIO2 + ai * (twon - u) / b,
+            cn: phi - ai * (twon - u),
+            dn: phi + ai * (twon + u)
+        };
+    }
 
-  var partialSum = 1. - 0.5 * m;
-  
-  do {
-    partialSum -= twoPow * (an - gn)*(an - gn);
-    twoPow *= 2.; 
+    // A. G. M. scale
+    b = Math.sqrt(1.0 - m);
+    c[0] = b;
+    twon = 1.0;
 
-    a0 = 0.5 * (an + gn);
-    g0 = Math.sqrt(an*gn);
+    while (Math.abs(c[i] / a[i]) > MACHEP) {
+        if (i > 7) {
+            console.error("ellpj: OVERFLOW error");
+            return { sn: 0.0, cn: 0.0, dn: 0.0, ph: 0.0 };
+        }
+        ai = a[i];
+        ++i;
+        c[i] = (ai - b) / 2.0;
+        t = Math.sqrt(ai * b);
+        a[i] = (ai + b) / 2.0;
+        b = t;
+        twon *= 2.0;
+    }
 
-    an = a0;
-    gn = g0;
+    // Backward recurrence
+    phi = twon * a[i] * u;
 
-    iter++;
+    do {
+        t = c[i] * Math.sin(phi) / a[i];
+        b = phi;
+        phi = (Math.asin(t) + phi) / 2.0;
+    } while (--i);
 
-  } while ((Math.abs(an-gn) > 1e-15) && (iter < maxIter));
+    t = Math.sin(phi);
 
-  if (iter == maxIter)
-    console.warn("Math.EllipticE hit iteration limit of " + maxIter + ", probably didn't converge.");
+    return {
+        sn: t,
+        cn: Math.cos(phi),
+        dn: Math.sqrt(1.0 - m * t * t),
+        ph: phi
+    };
+}
 
-  return 0.5 * Math.PI * partialSum / an; 
-};
-
-/* EllipticPi(n,m) - The complete elliptic integral of the third type.
- * The arguments are the characteristic n,
- * and the *parameter* m = k^2, where k is the *modulus*.
- * The arguments must satisfy n < 1, m < 1.
- * In terms of the integral definition, we have
- * Pi(n,m) = \int_0^{\pi/2} \frac{1}{(1-n(\sin\theta)^2)\sqrt{1 - m (\sin\theta)^2}} d\theta
- * This algorithm comes from:
- * http://scitation.aip.org/content/aip/journal/jap/34/9/10.1063/1.1729771
- * Garrett, Milan Wayne. "Calculation of fields, forces, and mutual
- * inductances of current systems by elliptic integrals." Journal of
- * Applied Physics 34.9 (1963): 2567-2573.
- * See Eqs. (18)-(21)
- */
-Math.EllipticPi = function( n, m )
-{
-  var iter = 0, maxIter = 50;
-
-  var kprime = Math.sqrt(1. - m);
-
-  var a0 = 1., g0 = kprime, zeta0 = 0.;
-
-  var an = a0, gn = g0,
-      deltan = (1. - n)/kprime,
-      epsn =  n/(1. - n), zetan = zeta0;
-
-  do {
-
-    zeta0 = 0.5 * (epsn + zetan);
-    epsn = (deltan*epsn + zetan)/(1. + deltan);
-    zetan = zeta0;
-
-    a0 = 0.5 * (an + gn);
-    g0 = Math.sqrt(an*gn);
-
-    an = a0;
-    gn = g0;
-
-    deltan = 0.25 * gn / an * (2. + deltan + 1./deltan);
-
-    iter++;
-
-  } while (((Math.abs(an-gn) > 1e-15) || (Math.abs(deltan - 1.) > 1e-15)) && (iter < maxIter));
-
-  if (iter == maxIter)
-    console.warn("Math.EllipticPi hit iteration limit of " + maxIter + ", probably didn't converge.");
-
-  return 0.5 * Math.PI / an * (1. + zetan);
+Math.JacobiSn = function(kOrU, time, timeperiod) {
+    let a_elliptic_integral, sn, cn, angle_amplitude;
+    // Based on the article "https://doi.org/10.1016/j.jfluidstructs.2019.01.020"
+    if (0 <= kOrU && kOrU < 1) {
+        a_elliptic_integral = Math.EllipticK(Math.sqrt(kOrU));
+        sn = Math.Ellipj(4 * a_elliptic_integral * time / timeperiod, Math.sqrt(kOrU)).sn;
+        angle_amplitude = sn;
+    } else if (-1 < kOrU && kOrU < 0) {
+        a_elliptic_integral = Math.EllipticK(Math.sqrt(Math.abs(kOrU)));
+        cn = Math.Ellipj(4 * a_elliptic_integral * time / timeperiod - a_elliptic_integral, Math.sqrt(Math.abs(kOrU))).cn;
+        angle_amplitude = cn;
+    } else {
+        angle_amplitude = "Error";
+    }
+    return angle_amplitude;
 };
